@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import type {Node} from 'react';
 import {
   StyleSheet,
@@ -7,6 +7,7 @@ import {
   Button,
   TextInput,
   View,
+  SafeAreaView,
   TextInputBase,
   Touchable,
   TouchableOpacity,
@@ -25,22 +26,35 @@ import {NavigationContainer} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import ReactNativeAN from 'react-native-alarm-notification';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
-import SQLite from 'react-native-sqlite-storage';
+import { openDatabase } from 'react-native-sqlite-storage';
 const Tab = createBottomTabNavigator();
 
-const db = SQLite.openDatabase(
-  {
-    name: 'TaskReminder.db',
-    location: 'default',
-  },
-  () => {},
-  error => {
-    console.log(error);
-  },
-);
+var db = openDatabase({name: 'Reminder.db'});
 
 function HomeScreen() {
+  useEffect(() => {
+    db.transaction(function (txn) {
+      txn.executeSql(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='Task'",
+        [],
+        function (tx, res) {
+          console.log('item:', res.rows.length);
+          if (res.rows.length == 0) {
+            txn.executeSql('DROP TABLE IF EXISTS Task', []);
+            console.log('in insertData');
+            txn.executeSql(
+              'CREATE TABLE IF NOT EXISTS Task(Key INTEGER PRIMARY KEY AUTOINCREMENT, Title TEXT, Detail TEXT, RDate TEXT, RTime TEXT)',
+              []
+            );
+          }
+        }
+      );
+    })
+
+  }, []);
+
   return (
+    
     <Tab.Navigator
       tabBarOptions={{
         showLabel: false,
@@ -110,12 +124,29 @@ export const AddTasks = ({navigation}) => {
   const [mode, setMode] = useState('date');
   const [show, setShow] = useState(false);
   const [text, setText] = useState('Empty');
-  const [udate, setUdate] = useState('Empty');
-  const [mytime, setMytime] = useState('Empty');
-  const [title, setTitle] = useState('Empty');
+  const [udate, setUdate] = useState('');
+  const [mytime, setMytime] = useState('');
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('Empty');
 
-
+  const insertData = () => {
+    if (title == '' || udate == '' || mytime == '') {
+      Alert.alert('Please Enter All the Values');
+    } else {
+      db.transaction(function (tx) {
+        tx.executeSql(
+          'INSERT INTO Task (Title, Detail, RDate, RTime) VALUES (?,?,?,?)',
+          [title, description, udate, mytime],
+          (tx, results) => {
+            console.log('Results', results.rowsAffected);
+            if (results.rowsAffected > 0) {
+              Alert.alert('Data Inserted Successfully....');
+            } else Alert.alert('Failed....');
+          }
+        );
+      });
+    }
+  }
 
   const onChange = (event, selectedDate) => {
     const currentDate = selectedDate || date;
@@ -142,21 +173,6 @@ export const AddTasks = ({navigation}) => {
     console.log(mytime);
     console.log(title);
     console.log(description);
-    db.transaction(tx => {
-      // Loop would be here in case of many values
-      tx.executeSql(
-        'INSERT INTO Task (Title, Description, RDate, RTime) VALUES (?,?,?,?)',
-        [title, description, fDate, fTime],
-        (tx, results) => {
-          console.log('Insert Results', results.rowsAffected);
-          if (results.rowsAffected > 0) {
-            Alert.alert('Success', 'User updated successfully');
-          } else {
-            alert('Updation Failed');
-          }
-        },
-      );
-    });
   };
 
   const showMode = currentMode => {
@@ -236,7 +252,7 @@ export const AddTasks = ({navigation}) => {
           marginTop: 20,
           backgroundColor: '#FFCA3C',
         }}
-        onPress={() => Alert.alert('Reminder Saved Succesfully')}>
+        onPress={insertData}>
         <Text style={{color: 'black', fontWeight: 'bold'}}>SAVE</Text>
       </TouchableOpacity>
       {show && (
@@ -252,45 +268,129 @@ export const AddTasks = ({navigation}) => {
     </View>
   );
 };
-const DATA = [
-  {
-    id: 'bd7acbea-c1b1-46c2-aed5-3ad53abb28ba',
-    title: 'A',
-    key: 0,
-    lastname: 'Last Name',
-    data: [
-      {key: 0, title: 'Muhammad Umair'},
-      {key: 1, title: 'User 2'},
-      {key: 2, title: 'User 3'},
-      {key: 3, title: 'User 4'},
-    ],
-  },
-];
 
 function MyTasks() {
-  return (
-    <View
-          style={{
-            flex: 1,
-            justifyContent: 'center',
-            alignItems: 'center',
-            backgroundColor: '#1F1E30',
-    }}>
-      <FlatList
-        sections={DATA}
-        renderItem={({item, section}) => (
-          <View
-            style={{
-              backgroundColor: 'grey',
-              padding: 5,
-              marginBottom: 5,
-              height: 40,
-            }}>
-            <Text> {item.title} </Text>
-          </View>
-        )}
+  const [items, setItems] = useState([]);
+  const [empty, setEmpty] = useState([]);
+
+  useEffect(() => {
+    db.transaction((tx) => {
+      tx.executeSql(
+        'SELECT * FROM Task',
+        [],
+        (tx, results) => {
+          var temp = [];
+          for (let i = 0; i < results.rows.length; ++i)
+            temp.push(results.rows.item(i));
+          setItems(temp);
+
+          if (results.rows.length >= 1) {
+            setEmpty(false);
+          } else {
+            setEmpty(true)
+          }
+
+        }
+      );
+
+    });
+  }, []);
+
+  const listViewItemSeparator = () => {
+    return (
+      <View
+        style={{
+          height: 1,
+          width: '100%',
+          backgroundColor: '#000'
+        }}
       />
-    </View>
+    );
+  };
+
+  const emptyMSG = (status) => {
+    return (
+      <View style={{ justifyContent: 'center', alignItems: 'center', flex: 1 }}>
+
+        <Text style={{ fontSize: 25, textAlign: 'center' }}>
+          No Record Inserted Database is Empty...
+        </Text>
+
+      </View>
+    );
+  }
+  const deleteData = ({key}) => {
+    if (key == '') {
+      Alert.alert('No key found');
+    } else {
+      db.transaction(function (tx) {
+        tx.executeSql(
+          'DELETE FROM Task WHERE Key = ?',
+          [key],
+          (tx, results) => {
+            console.log('Results', results.rowsAffected);
+            if (results.rowsAffected > 0) {
+              Alert.alert('Data Inserted Successfully....');
+            } else Alert.alert('Failed....');
+          }
+        );
+      });
+
+    }
+  }
+  return (
+    <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
+        {empty ? emptyMSG(empty) :
+
+          <FlatList
+            data={items}
+            ItemSeparatorComponent={listViewItemSeparator}
+            keyExtractor={(item, index) => index.toString()}
+            renderItem={({ item }) =>
+              <View key={item.Task} style={{ padding: 20, borderBottomWidth:1, flexDirection:"row"}}>
+                <View>
+                  <Text style={styles.itemsStyle}> Title: {item.Title} </Text>
+                  <Text style={styles.itemsStyle}> Details: {item.Detail} </Text>
+                  <Text style={styles.itemsStyle}> Date: {item.RDate} </Text>
+                  <Text style={styles.itemsStyle}> Time: {item.RTime} </Text>
+                </View>
+                <View style={{ marginLeft:200}}>
+                <TouchableOpacity>
+                    <Image
+                      source={require('./android/app/src/main/Images/editing.png')}
+                      resizeMode="contain"
+                      style={{
+                        width: 25,
+                        height: 25,
+                        tintColor: 'black',
+                      }}
+                    />
+                </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                  onPress={deleteData(item.Key)}>
+                    <Image
+                      source={require('./android/app/src/main/Images/delete.png')}
+                      resizeMode="contain"
+                      style={{
+                        width: 25,
+                        height: 25,
+                        tintColor: 'black',
+                        marginTop: 20,
+                      }}
+                    />
+                  </TouchableOpacity>
+                  
+                </View>
+                
+              </View>
+            }
+          />
+        }
+      </View>
+    </SafeAreaView>
+
   );
 }
 
